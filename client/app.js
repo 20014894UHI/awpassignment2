@@ -22,11 +22,12 @@ socket.on("frame", function(data) {
         context.drawImage(this, 0, 0, canvas.width, canvas.height);
         context2.fillText(data.buffer, 10, 50);  
     }; 
-    img.src= `data:image/png;base64,${data.buffer}`;
-    //img.src= "data:image/png;base64," + data.buffer;
+    //img.src= `data:image/png;base64,${data.buffer}`;
+    img.src= `data:image/png;base64,` + data.buffer;
 });
 
 socket.on('image', (data)=>{
     //console.log('data', data);
+    // Won't work currently without the line below 
     imageEle.src = `data:image/png;base64,` + data.buffer; 
 });

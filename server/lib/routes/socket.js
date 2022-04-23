@@ -5,10 +5,8 @@ const path = require ("path");
 // camera properties 
 const camWidth = 640; 
 const camHeight = 480; 
-//const camFps = 10;
-const camFps = 1; 
+const camFps = 10;
 
-//      const camInterval = 3000; 
 const camInterval = 1000/camFps; 
 
 const rectColor = [0, 255, 0]; 
@@ -29,14 +27,14 @@ camera.set(cv.CAP_PROP_FRAME_HEIGHT, camHeight);
 module.exports = function (socket) { 
      setInterval(function() {
         let frame=camera.read(); //const
+        // INterim to get it working with the image element added 
         socket.emit("image", { 
             buffer: cv.imencode(".png", frame).toString("base64")
         });
-        socket.emit("canvas-video", { 
+        // Original 
+        socket.emit("frame", { 
             buffer: cv.imencode(".png", frame).toString("base64")
         });
-           
-        
     }, camInterval);
 }
 
