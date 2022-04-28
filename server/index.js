@@ -3,9 +3,9 @@ const cv = require('opencv4nodejs');
 const mat = cv.imread('./img.jpg');
 cv.imwrite('./img.png', mat);
 const classifier = new cv.CascadeClassifier(cv.HAAR_FRONTALFACE_ALT2);
-
 const blue = new cv.Vec(255, 0, 0); 
 const thickness = 2; 
+
 cv.imreadAsync('./mona.jpg', (err, img) => { 
     if (err) { return console.error(err);}
     const grayImg = img.bgrToGray();
