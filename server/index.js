@@ -1,4 +1,9 @@
 const { HAAR_LEFTEYE_2SPLITS } = require('opencv4nodejs');
+// 
+//https://github.com/justadudewhohacks/opencv4nodejs/blob/master/lib/typings/constants.d.ts
+// lists export const HAAR_LEFTEYE_2SPLITS: string;
+// export const HAAR_RIGHTEYE_2SPLITS: string;
+
 const cv = require('opencv4nodejs');
 const mat = cv.imread('./img.jpg');
 cv.imwrite('./img.png', mat);

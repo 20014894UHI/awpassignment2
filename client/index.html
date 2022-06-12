@@ -1,17 +1,52 @@
- <html>
+<html>
     <head>
         <meta name="viewport" content="initial-scale-1" />
-        <title>face-detection-node-opencv</title>
+        <title>Assignment 2 Face detection node opencv</title>
+        <link ref="stylesheet" type="text/css" href="/styles.css" />
+        <style>
+            body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+            #form-area { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
+            #form-area > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
+      
+          </style>
+           
+       
+    </head>
+    <body>    
+        <div class="container center">
+<h1>Assignment 2</h1>           <canvas id="canvas-video" width="640" height="480"></canvas>
+            <!-- <ul id="messages"></ul> -->
+            <!-- <form id="form" action=""> -->
+            
+            <!-- <input id="input" autocomplete="off" /> -->
+            <!-- <button>Send</button> -->
+            <!-- </form>         -->
+            <div id='form-area'>
+                <button id="btnShowGlasses" onclick="btnGlassesClicked()">Toggle Glasses</button>
+                <button id="btnShowMustache" onclick='btnMustacheClicked()'>Toggle Mustache</button>    
+                <button id="btnShowRectangles" onclick='btnRectanglesClicked()'>Toggle Rectangles</button>    
+            </div>
+        </div>
+        <script src="/socket.io/socket.io.js"></script>
+        <script src="/app.js"></script>
+    </body>
+</html>
+ <!-- <html>
+    <head>
+        <meta name="viewport" content="initial-scale-1" />
+        <title>AWP Assignment 2</title>
         <link rel="stylesheet" type="text/css" href="/styles.css" />
     </head>
     <body>
+
+
         <div class="container center">
             <canvas id="canvas-video" width="640" height="480"></canvas>
         </div>
         <script src="/socket.io/socket.io.js"></script>
         <script src="/app.js"></script>
     </body>
-</html>  
+</html>   -->
 <!-- 
  <html>
     <head>
