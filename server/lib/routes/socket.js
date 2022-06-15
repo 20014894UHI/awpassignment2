@@ -1211,7 +1211,7 @@ module.exports = function (socket) {
         // **************
 
       }
-      cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
+      //@cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
     }
 
     socket.emit("frame", {
