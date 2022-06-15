@@ -424,7 +424,7 @@ module.exports = function (socket) {
         ptMouthTopR,
         mouthWidth,
         ptMouthTopMiddle,
-        ptEyePairTopL,
+      //  ptEyePairTopL,
         ptEyePairBottomL,
         ptEyePairTopR,
         ptRightEyeBottomL,
@@ -453,11 +453,8 @@ module.exports = function (socket) {
           eyePairResult.objects[sortByNumDetections(eyePairResult)[0]];
         eyePairWidth = eyePairRect.width;
         eyePairHeight = eyePairRect.height;
-        ptEyePairTopL = new cv.Point(
-          eyePairRect.x + eyePairWidth,
-          eyePairRect.y
-        );
-        ptEyePairTopR = new cv.Point(eyePairRect.x, eyePairRect.y);
+        //ptEyePairTopL = new cv.Point(eyePairRect.x + eyePairWidth,eyePairRect.y);
+        ptEyePairTopR = new cv.Point(eyePairRect.x +eyePairRect.width, eyePairRect.y);
         ptEyePairBottomL = new cv.Point(
           eyePairRect.x + eyePairWidth,
           eyePairRect.y - eyePairRect.height
@@ -637,13 +634,9 @@ module.exports = function (socket) {
           // Or not in sequence but eyePair available
           else if (
             (leftEyeRelativeToRight && eyesOverlap && eyePair) ||
-            (!leftEyeRelativeToRight && eyePair)
-          ) {
-            console.log(
-              "        1.2. Fallback left eye and right eye not in position but eye pair "
-            );
+            (!leftEyeRelativeToRight && eyePair)) {
+            console.log("        1.2. Fallback left eye and right eye not in position but eye pair ");
             glassesWidth = eyePairWidth;
-
             // glassesOffset = Math.round((ptLeftEyeTopR.x - ptLeftEyeTopL.x) * 0.7); //- leftEyeRect/2;
             glassesOffset = Math.round(rEyeWidth / 2);
             if (
@@ -655,7 +648,7 @@ module.exports = function (socket) {
               );
               //  eye pair is further over than both eyes and both eyes on left
               eyeRotation = calcTilt(calcAngle(eyePairEndMiddleR, lEyeMiddle));
-              glassesTopLx = Math.round(ptEyePairTopL.x - glassesOffset);
+              glassesTopLx = Math.round(eyePairRect.x - glassesOffset);
               // below from 1.2.2. would seem more logical but above seems less jumpy
               // Seems to have a better transition between frames when it's jumping between the two alternatives....
               // glassesTopLx = Math.round(faceRect.x + ptRightEyeTopL.x - glassesOffset);
@@ -666,12 +659,12 @@ module.exports = function (socket) {
               // left eye is further over (appears on right )
               eyeRotation = calcTilt(calcAngle(lEyeMiddle, eyePairEndMiddleL));
               //glassesTopLx = Math.round(faceRect.x + ptRightEyeTopL.x - glassesOffset);
-              if (ptRightEyeTopL.x < ptEyePairTopL.x) {
+              if (ptRightEyeTopL.x < eyePairRect.x) {
                 // To improve this: Startign point could be based on Middle between eye pair rect and right eye rect r.x then subtract half the glasses width from that
-                glassesTopLx = Math.round(ptEyePairTopL.x);
+                glassesTopLx = Math.round(eyePairRect.x);
                 // subtracting the offset nudges it over a bit too much with small faces
               }
-              glassesTopLx = Math.round(ptEyePairTopL.x - glassesOffset);
+              glassesTopLx = Math.round(eyePairRect.x - glassesOffset);
               glassesTopLy = Math.round(faceRect.y - eyePairHeight / 3); // + paddingGlassesT);
             }
           }
@@ -722,9 +715,7 @@ module.exports = function (socket) {
             // This doesn't really work , the rectangles can be contained
             // on either side...
             if (nose) {
-              if (
-                ptRightEyeTopR.x < ptLeftEyeTopR.x &&
-                (ptRightEyeTopL.x > ptLeftEyeTopL.x) &
+              if (ptRightEyeTopR.x < ptLeftEyeTopR.x && (ptRightEyeTopL.x > ptLeftEyeTopL.x) &
                   (ptNoseTopL.x < ptLeftEyeTopL.x)
               ) {
                 // position from 'left' eye'
@@ -744,21 +735,11 @@ module.exports = function (socket) {
 
             // position to nudge glasses to with uncertain width and position information
             // nudge them so not placed outside the face rect
-            // console.log("        Before nudge", glassesTopLx);
             // let eTopLxNudged = Math.round(nudgeGlasses (faceRect.x, faceWidth, faceRect.x, glassesWidth));
             // glassesTopLx = eTopLxNudged;
-
             glassesTopLx = Math.round(faceWidth * 0.1);
             glassesWidth = faceWidth * 0.7;
-
-            // To do - nudge down a little
-            // glassesTopLy = Math.round(faceRect.y + ptLeftEyeTopL.y);
-            glassesTopLy = Math.round(faceRect.y - leftEyeRect.height / 3); // leftEyeHeight/3) ; // + paddingGlassesT);
-            //glassesTopLy = Math.round(ptLeftEyeTopL.y  + paddingGlassesT - (leftEyeRect.height));
-
-            //    glassesTopLy = Math.round(faceRect.y + ptLeftEyeTopL.y - paddingGlassesT);
-            //glassesTopLy = Math.round(faceRect.y + ptLeftEyeTopRAbs.y); //lEyeLx + glassesWidth;
-
+            glassesTopLy = Math.round(ptLeftEyeTopL.y - (leftEyeRect.height*1.5));
             //  if (nose && overlapVertically(ptNoseTopL, ptRightEyeTopL)|| mouthDetected
             //     && overlapVertically(ptMouthTopL, ptRightEyeTopL))
             //  {
@@ -797,18 +778,18 @@ module.exports = function (socket) {
           glassesWidth = eyePairWidth;
           glassesOffset = Math.round(noseWidth / 2);
           console.log("        glassesOffset", glassesOffset);
-          eyeRotation = calcTilt(calcAngle(ptEyePairTopL, ptEyePairTopR));
+          eyeRotation = calcTilt(calcAngle(eyePairRect.x, ptEyePairTopR));
           // Correct one below, from top right to top left
           // But no need to do the calculation in this case and can just set to 0
           //eyeRotation = 0;
           console.log("         Eye rotation", eyeRotation); // Expect to be 0 as all points in the eyePair rect
           // could just set rotation to 0;
           // Middle of glasses should be over middle of nose / middle of eyePair
-          glassesTopLx = ptEyePairTopR.x - glassesOffset;
+          glassesTopLx = eyePairRect.x - glassesOffset;
           // Typically the eyePair rect is < half the height of the single corolloary
-          glassesTopLy = Math.round(
-            ptEyePairTopL.y + paddingGlassesT - eyePairRect.height
-          );
+          // glassesTopLy = Math.round(eyePairRect.y + paddingGlassesT + (eyePairHeight/3*1));
+          glassesTopLy = Math.round(eyePairRect.y + (eyePairRect.height));
+
         }
         // **************
         // End 2. EYE PAIR specific segment
@@ -865,11 +846,13 @@ module.exports = function (socket) {
           // To do reuse other method
           console.log("4. Right eye only (red)");
           glassesWidth = Math.round(rEyeWidth * 2.5);
-
           glassesOffset = Math.round(rEyeWidth / 2);
           console.log("   No rotation");
           //  eyeRotation = calcTilt(calcAngle(eyePairEndMiddleR, lEyeMiddle));
-          glassesTopLx = Math.round(ptRightEyeTopL.x - glassesOffset);
+          glassesTopLx = Math.round(rightEyeRect.x - glassesOffset);
+          //let eTopLxNudged = Math.round(nudgeGlasses (rightEyeRect.x - glassesOffset, faceWidth, faceRect.x, glassesWidth));
+          //console.log("nudging"); 
+          //glassesTopLx = eTopLxNudged;
           glassesTopLy = Math.round(faceRect.y - rightEyeRect.height / 3); // + paddingGlassesT);
         }
 
@@ -1072,8 +1055,8 @@ module.exports = function (socket) {
         if (mouthDetected && !eyeOverlapsMouth) {
           ptMustacheTL = new cv.Point(
             Math.round(ptMouthTopMiddle.x - mustacheCols / 2),
-            Math.round(ptMouthTopL.y - mouthRect.height * 2)
-          ); //(mustacheProportionateRows * 2));
+            Math.round(ptMouthTopL.y - mouthRect.height * 1.6)
+          ); 
         }
         // Fallback use nose if mouth position not reliable or mouth not detected
         else if (!mouthDetected && nose) {
@@ -1083,7 +1066,6 @@ module.exports = function (socket) {
           );
         }
         if (mouthDetected || nose) {
-          //} && !eyeOverlapsMouth) {
           const moustacheTopLx = faceRect.x + ptMustacheTL.x;
           const moustacheTopLy = faceRect.y + ptMustacheTL.y;
           const paddedResizedMustacheBGRchannels = resizedMustacheBGR.copyMakeBorder(
@@ -1229,7 +1211,7 @@ module.exports = function (socket) {
         // **************
 
       }
-      //@cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
+      cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
     }
 
     socket.emit("frame", {
