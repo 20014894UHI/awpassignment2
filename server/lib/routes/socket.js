@@ -26,17 +26,11 @@ camera.set(cv.CAP_PROP_FRAME_HEIGHT, camHeight);
 // 1. load pre-trained classifiers
 haarNoseCascade = new cv.CascadeClassifier("./data/haarcascade_mcs_nose.xml");
 haarMouthCascade = new cv.CascadeClassifier("./data/haarcascade_mcs_mouth.xml");
-// haarCatCascade = new cv.CascadeClassifier('./data/haarcascade_frontalcatface.xml');
 
 const classifier = new cv.CascadeClassifier(cv.HAAR_FRONTALFACE_DEFAULT);
-// mona lisa: //const classifier = new cv.CascadeClassifier(cv.HAAR_FRONTALFACE_ALT2);
-// const eyeClassifier = new cv.CascadeClassifier(cv.HAAR_EYE);
 const rightEyeClassifier = new cv.CascadeClassifier(cv.HAAR_RIGHTEYE_2SPLITS);
 const leftEyeClassifier = new cv.CascadeClassifier(cv.HAAR_LEFTEYE_2SPLITS);
-const eyePairClassifier = new cv.CascadeClassifier(
-  "./data/haarcascade_mcs_eyepair_big.xml"
-);
-// Can also use HAAR_EYE to determine left right eye
+const eyePairClassifier = new cv.CascadeClassifier("./data/haarcascade_mcs_eyepair_big.xml");
 
 const drawRect = (image, rect, color, opts = { thickness: 2 }) =>
   image.drawRectangle(rect, color, opts.thickness, cv.LINE_8);
@@ -58,9 +52,6 @@ const drawMagentaRect = (image, rect, opts = { thickness: 2 }) =>
 const glasses4Ch = cv.imread("./glassesalpha.png", -1);
 const mustache4Ch = cv.imread("./mustache1.png", -1);
 
-//console.log("glasses4Ch.type: ", glasses4Ch.type);
-//console.log("glasses4Ch.channels", glasses4Ch.channels);
-
 // *** Create the masks for the glasses and moustache
 const glassesMask = glasses4Ch.threshold(30, 255, cv.THRESH_BINARY_INV);
 const mustacheMask = mustache4Ch.threshold(30, 255, cv.THRESH_BINARY_INV);
@@ -77,6 +68,44 @@ const mustacheBgr = mustache4Ch.cvtColor(cv.COLOR_BGRA2BGR);
 // **** Calculations on the glasses/moustache width and height to keep resizing proportionate regardless of the image used
 const glassesRatio = glasses4Ch.cols / glasses4Ch.rows;
 const mustacheRatio = mustache4Ch.cols / mustache4Ch.rows;
+
+// function getLeftMost(a,b,c) {
+//   let leftMostPointX = Math.min(a.x,b.x,c.x);
+//   return leftMostPointX;
+// }
+function getRightmost(ep,l,r) {
+  let rightmostX;
+  if (!ep) {rightmostX = Math.max(l.x,r.x);}
+  else if (!l) {rightmostX = Math.max(ep.x,r.x);}
+  else if (!r) {rightmostX = Math.max(l.x,ep.x);}
+  else rightmostX = Math.max(ep.x,l.x,r.x);
+  if (rightmostX == ep.x) {return ep;}
+  else if (rightmostX == l.x) {return l;}
+  else if (rightmostX == r.x) {return r;}
+}
+/* get Left Most point (eyePair, left, right)*/
+function getLeftmost(ep,l,r) {
+  let leftmostX; 
+  if (!ep) {
+    leftmostX = Math.min(l.x,r.x);
+  }
+  if (!l) {
+    leftmostX = Math.min(ep.x,r.x);
+  }
+  if (!r) {
+    leftmostX = Math.min(ep.x,l.x);
+  }
+  else leftmostX = Math.min(ep.x,l.x,r.x);
+  if (leftmostX == ep.x) {
+    return ep;
+  }
+  if (leftmostX == l.x) {
+    return l;
+  }
+  if (leftmostX == r.x) {
+    return r;
+  }
+}
 
 // Find a position that we can base the start position for the glasses at
 function nudgeGlasses(gStart, fWidth, faceL, glWidth) {
@@ -241,7 +270,7 @@ function glassesWForEyesUsingMouth(mouth, mouthMidx, lEyeTopRx, rEyeTopLx) {
   return estimatedGlassesWidth;
 }
 
-// Better performance than copyTo to place the glasses on the regionGlasses
+// copyTo gives better performance to place the glasses on the regionGlasses than this 
 // Credit: Gavin https://stackoverflow.com/a/57716197/19318647 in
 // https://stackoverflow.com/questions/57699414/how-to-set-a-matrix-region-with-opencv4nodejs
 /* Places a source matrix onto a dest matrix.
@@ -331,46 +360,36 @@ module.exports = function (socket) {
   });
 
   setInterval(function () {
+    //console.time("CameraRead");
     let frame = camera.read();
+    //console.timeEnd("CameraRead");
+    //console.time("detectMSafter");
+    //let frame = camera.readAsync();
     const grayFrame = frame.bgrToGray(); // Convert frame to grey scale
     //const faceResult = classifier.detectMultiScale(grayFrame);
-    const faceResult = classifier.detectMultiScale(grayFrame, {
-      scaleFactor: 1.2,
-      minSize: new cv.Size(100, 100),
-    });
-
-    // const catResult = haarCatCascade.detectMultiScale( grayFrame);
-    // if (catResult.objects.length > 0) {
-    //     const catFaceRect = catResult.objects[0];
-    //     const catFaceRegion = frame.getRegion(catFaceRect);
-    //     drawCyanRect(frame, catFaceRect); console.log("catResult", catResult);
-    // }
-
-    // if (!faceResult.objects.length) {//     throw new Error ('No faces detected'); // }
+    const faceResult = classifier.detectMultiScale(grayFrame, {scaleFactor: 1.2, minSize: new cv.Size(100, 100),});
     const sortByNumDetections = (result) =>
       result.numDetections
         .map((num, idx) => ({ num, idx }))
         .sort((n0, n1) => n1.num - n0.num)
         .map(({ idx }) => idx);
     if (faceResult.objects.length > 0) {
-      // const faceRect = faceResult.objects[sortByNumDetections(faceResult)[0]];
       const faceRect = faceResult.objects[0];
       const faceWidth = faceRect.width;
       if (showRectangles == true) drawBlueRect(frame, faceRect);
       // Create the ROIS
       const grayFaceRegion = grayFrame.getRegion(faceRect); // Grey
       const faceRegion = frame.getRegion(faceRect);
-      // Example data:
-      // faceRegion Mat {step: 1920,elemSize: 3,sizes: [ 190, 190 ],empty: 0,depth: 0, dims: 2,channels: 3,type: 16,cols: 190,rows: 190}
+
+      //console.timeEnd("detectMSafter");
+      //console.time("OtherClassifiers");
 
       // Detect the eyes - experimented with individual haar_eye, left, right and pair
-      // const eyeResult = eyeClassifier.detectMultiScale(grayFaceRegion); // HAAR_EYE
       const eyePairResult = eyePairClassifier.detectMultiScale(grayFaceRegion);
-      const rightEyeResult = rightEyeClassifier.detectMultiScale(grayFaceRegion); 
-      const leftEyeResult = leftEyeClassifier.detectMultiScale(grayFaceRegion); 
-      // const noseClassifier = new cv.CascadeClassifier(haarNoseCascade);
+      const rightEyeResult = rightEyeClassifier.detectMultiScale(grayFaceRegion); //, {scaleFactor: 1.2, maxSize: new cv.Size(50, 50)}
+      const leftEyeResult = leftEyeClassifier.detectMultiScale(grayFaceRegion, {scaleFactor: 1.2, maxSize: new cv.Size(50, 50)}); 
       // const noseResult = haarNoseCascade.detectMultiScale( faceRegion, noses, 1.1, 2, 0|CV_HAAR_SCALE_IMAGE, Size(30, 30));
-      const noseResult = haarNoseCascade.detectMultiScale(grayFaceRegion);
+      const noseResult = haarNoseCascade.detectMultiScale(grayFaceRegion, {scaleFactor: 1.2, minSize: new cv.Size(30, 30),});
       const mouthResult = haarMouthCascade.detectMultiScale(grayFaceRegion);
 
       // *** Height of the glassses is a fraction of the face region
@@ -399,6 +418,23 @@ module.exports = function (socket) {
       );
       //@cv.imwrite("./E_ResizedMustacheBlueGreenRed.jpg", resizedMustacheBGR);
 
+      // // Testing simple sequence to try to to get full colour working 
+      // COntinued line around 979
+      // const resizedGlasses = glasses4Ch.resize(glassesProportionateRows,
+      // glassesProportionateColumns, interpolation=cv.INTER_AREA);
+      // cv.imwrite("./z_1_resizedGlasses.jpg", resizedGlasses);
+      // const greyGlasses = resizedGlasses.cvtColor(cv.COLOR_BGR2GRAY);
+      // cv.imwrite("./z_1_greyGlasses.jpg", greyGlasses);
+      // //const glassesMask2 = greyGlasses.threshold(230, 255,  cv.THRESH_BINARY_INV);
+      // const glassesMask2 = greyGlasses.threshold(30, 255, cv.THRESH_BINARY_INV);
+      // cv.imwrite("./z_1_glassesMask2.jpg", glassesMask2);
+      // const glassesMaskInvert = glassesMask2.bitwiseNot();
+      // cv.imwrite("./z_1_glassesMaskInvert.jpg", glassesMaskInvert);
+      // const glassesFace = resizedGlasses.bitwiseAnd(resizedGlasses,glassesMask2);
+      // cv.imwrite("./Z_1_glasseyFace.jpg", glassesFace);
+     
+      //console.timeEnd("OtherClassifiers");
+
       let ptMustacheTL,
         anyEye,
         eyePairRect,
@@ -424,7 +460,7 @@ module.exports = function (socket) {
         ptMouthTopR,
         mouthWidth,
         ptMouthTopMiddle,
-      //  ptEyePairTopL,
+        ptEyePairTopL,
         ptEyePairBottomL,
         ptEyePairTopR,
         ptRightEyeBottomL,
@@ -453,7 +489,7 @@ module.exports = function (socket) {
           eyePairResult.objects[sortByNumDetections(eyePairResult)[0]];
         eyePairWidth = eyePairRect.width;
         eyePairHeight = eyePairRect.height;
-        //ptEyePairTopL = new cv.Point(eyePairRect.x + eyePairWidth,eyePairRect.y);
+        ptEyePairTopL = new cv.Point(eyePairRect.x, eyePairRect.y);
         ptEyePairTopR = new cv.Point(eyePairRect.x +eyePairRect.width, eyePairRect.y);
         ptEyePairBottomL = new cv.Point(
           eyePairRect.x + eyePairWidth,
@@ -461,12 +497,12 @@ module.exports = function (socket) {
         );
         eyePairEndMiddleR = new cv.Point(
           eyePairRect.x + eyePairWidth,
-          eyePairRect.y - eyePair.height / 2
+          Math.round(eyePairRect.y - eyePairRect.height / 2)
         );
         eyePairEndMiddleL = new cv.Point(
           eyePairRect.x,
-          eyePairRect.x - eyePair.height / 2
-        );
+          Math.round(eyePairRect.x - (eyePairRect.height / 2)));
+        
         if (showRectangles == true) drawMagentaRect(faceRegion, eyePairRect);
       }
 
@@ -481,22 +517,12 @@ module.exports = function (socket) {
         rEyeHeight = rightEyeRect.height;
         ptRightEyeBL = new cv.Point(rightEyeRect.x, rightEyeRect.y);
         ptRightEyeTopL = new cv.Point(rightEyeRect.x, rightEyeRect.y);
-        ptRightEyeTopR = new cv.Point(
-          ptRightEyeTopL.x + rightEyeRect.width,
-          rightEyeRect.y
-        );
-        ptRightEyeBottomL = new cv.Point(
-          rightEyeRect.x,
-          rightEyeRect.y + rightEyeRect.height
-        );
-        ptRightEyeBottomR = new cv.Point(
-          rightEyeRect.x + rightEyeRect.width,
-          rightEyeRect.y - rightEyeRect.height
-        );
+        ptRightEyeTopR = new cv.Point(ptRightEyeTopL.x + rightEyeRect.width,rightEyeRect.y);
+        ptRightEyeBottomL = new cv.Point(rightEyeRect.x,rightEyeRect.y + rightEyeRect.height);
+        ptRightEyeBottomR = new cv.Point(rightEyeRect.x + rightEyeRect.width,rightEyeRect.y - rightEyeRect.height);
         rEyeMiddle = calcRectCentre(rightEyeRect);
       }
 
-      // Left eye (appears on right)
       if (leftEyeResult.objects.length > 0) {
         leftEye = true;
         anyEye = true;
@@ -505,7 +531,6 @@ module.exports = function (socket) {
         if (showRectangles == true) drawCyanRect(faceRegion, leftEyeRect);
         lEyeWidth = leftEyeRect.width;
         ptLeftEyeTopL = new cv.Point(leftEyeRect.x, leftEyeRect.y);
-        //  ptLeftEyeBottomL = new cv.Point(ptLeftEyeTopL.x, ptLeftEyeTopL.y - leftEyeRect.height);
         ptLeftEyeBottomL = new cv.Point(
           ptLeftEyeTopL.x,
           ptLeftEyeTopL.y + leftEyeRect.height
@@ -564,7 +589,8 @@ module.exports = function (socket) {
       // cropped in the rotation step
       // References for this approach and another suitable one:
       // Kaan E. in OpenCV Python : rotate image without cropping sides https://stackoverflow.com/a/47290920/19318647 in https://stackoverflow.com/questions/43892506/opencv-python-rotate-image-without-cropping-sides
-      const diagonalGlassesSquare =glassesProportionateColumns * glassesProportionateColumns +glassesProportionateRows * glassesProportionateRows;
+      const diagonalGlassesSquare =glassesProportionateColumns * glassesProportionateColumns +glassesProportionateRows * 
+      glassesProportionateRows;
       const diagonalGlasses = Math.round(Math.sqrt(diagonalGlassesSquare));
       const paddingGlassesT = Math.round((diagonalGlasses - glassesProportionateRows) / 2);
       const paddingGlassesB = Math.round((diagonalGlasses - glassesProportionateRows) / 2);
@@ -581,218 +607,152 @@ module.exports = function (socket) {
       /*******************************************************/
       /* Evaluate scenarios depending on what is detected   */
       if (showGlasses == true) {
-        //glassesWidth = Math.round(faceWidth * .7); // fallback where no better alternative
+  
         if (!faceRect) {
-          console.log("Face not detected this frame");
-        }
+        //console.log("Face not detected this frame");
+      }
         if (faceRect && !anyEye) {
-          console.log("Eyes not detected in face this frame");
+        //  console.log("Eyes not detected in face this frame");
         }
-
         // ************************
         // * 1. Left eye and right eye detected *****/
         // ************************
         else if (leftEye && rightEye) {
-          console.log("1. Left and right eye");
           leftEyeRelativeToRight = rectsInSequenceLeftRight(
             leftEyeRect,
             rightEyeRect
           );
           const eyesOverlap = rectOverlaps(rightEyeRect, leftEyeRect);
-          // let containsLR = leftEyeRect.area + rightEyeRect.area == leftEyeRect.area;
-          console.log("eyesOverlap", eyesOverlap);
           if (leftEyeRelativeToRight && !eyesOverlap) {
-            //     if (lEyeMiddle.x > rEyeMiddle.x) {
             console.log("1.1. relative positions ok and eyes not overlapping");
+
             middleEyeToEyeDistance = lEyeMiddle.x - rEyeMiddle.x;
-            glassesOffset = Math.round(
-              (ptLeftEyeTopL.x - ptRightEyeTopR.x) * 0.7
-            );
-            middleEyeToEyeDistance = lEyeMiddle.x - rEyeMiddle.x;
-            // calculate the point between the eyes along a plane from rEyeRect.y
+            glassesOffset = Math.round((ptLeftEyeTopL.x - ptRightEyeTopR.x) * 0.7);
             middleBetwEyes = new cv.Point(
               Math.round(rEyeMiddle.x + (lEyeMiddle.x - rEyeMiddle.x) / 2),
               ptRightEyeTopL.y
             );
-            console.log("       1.1.2. Determine rotation and positions");
-            eyeRotation = calcTilt(calcAngle(lEyeMiddle, rEyeMiddle)); // eye appearing on R, eye appearing on L
-            console.log("          Eye rotation", eyeRotation);
+            eyeRotation = calcTilt(calcAngle(ptLeftEyeBottomL, ptRightEyeBottomL)); // eye appearing on R, eye appearing on L
+            // eyeRotation = calcTilt(calcAngle(lEyeMiddle, rEyeMiddle)); // eye appearing on R, eye appearing on L
             glassesWidth = ptLeftEyeTopR.x - ptRightEyeTopL.x;
-
             glassesHeight = Math.round(glassesWidth / glassesRatio);
-            glassesTopLx = Math.round(ptRightEyeTopL.x - glassesOffset);
+            glassesTopLx  =  Math.round(ptRightEyeTopL.x - glassesOffset);
+
             // To refine this - tweak to use eye centre as a extra cue to position the glasses in this case
             // Put the eye centre in the middle of the glasses y - removed initial trials that were not working
             // The rotation padding also affects this
             // glassesTopLy = faceRect.y - (rEyeMiddle.y - Math.round(glassesHeight/2) - paddingGlassesT);
             // glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y + (rEyeHeight/2)- paddingGlassesT);
-            glassesTopLy = Math.round(
-              faceRect.y + ptRightEyeTopL.y - paddingGlassesT
-            );
-          }
-          // Left & RE in correct sequence but they overlap
-          // Or not in sequence but eyePair available
+            glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y - paddingGlassesT);
+
+            // Adjust to stop glasses 'riding up' - adjust in proportion to the rotation... 
+            glassesTopLy = glassesTopLy - eyeRotation; 
+            }
+          // Left & RE in correct sequence but they overlap // Or not in sequence but eyePair available
           else if (
             (leftEyeRelativeToRight && eyesOverlap && eyePair) ||
             (!leftEyeRelativeToRight && eyePair)) {
-            console.log("        1.2. Fallback left eye and right eye not in position but eye pair ");
-            glassesWidth = eyePairWidth;
-            // glassesOffset = Math.round((ptLeftEyeTopR.x - ptLeftEyeTopL.x) * 0.7); //- leftEyeRect/2;
-            glassesOffset = Math.round(rEyeWidth / 2);
-            if (
-              ptEyePairTopR.x > ptLeftEyeTopR.x &&
-              ptEyePairTopR.x > ptRightEyeTopR.x
-            ) {
-              console.log(
-                "          1.2.1 eye pair further over than both LE and RE detected"
-              );
-              //  eye pair is further over than both eyes and both eyes on left
-              eyeRotation = calcTilt(calcAngle(eyePairEndMiddleR, lEyeMiddle));
-              glassesTopLx = Math.round(eyePairRect.x - glassesOffset);
-              // below from 1.2.2. would seem more logical but above seems less jumpy
-              // Seems to have a better transition between frames when it's jumping between the two alternatives....
-              // glassesTopLx = Math.round(faceRect.x + ptRightEyeTopL.x - glassesOffset);
-              glassesTopLy = Math.round(faceRect.y - eyePairHeight / 3); // + paddingGlassesT);
-              // glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y - paddingGlassesT);
-            } else if (ptEyePairTopR.x < ptLeftEyeTopR.x) {
-              console.log("         1.2.2 Left eye further over");
-              // left eye is further over (appears on right )
-              eyeRotation = calcTilt(calcAngle(lEyeMiddle, eyePairEndMiddleL));
-              //glassesTopLx = Math.round(faceRect.x + ptRightEyeTopL.x - glassesOffset);
-              if (ptRightEyeTopL.x < eyePairRect.x) {
-                // To improve this: Startign point could be based on Middle between eye pair rect and right eye rect r.x then subtract half the glasses width from that
-                glassesTopLx = Math.round(eyePairRect.x);
-                // subtracting the offset nudges it over a bit too much with small faces
-              }
-              glassesTopLx = Math.round(eyePairRect.x - glassesOffset);
-              glassesTopLy = Math.round(faceRect.y - eyePairHeight / 3); // + paddingGlassesT);
+            console.log("1.2. Left eye and right eye not in position but eye pair ");
+            
+            // Overwrite y value of eye pair to balance out its lower height 
+            ptEyePairTopL = new cv.Point(ptEyePairTopL.x, Math.round(ptEyePairTopL.y - (eyePairHeight/3*2)));   
+            ptEyePairTopR = new cv.Point(ptEyePairTopR.x, Math.round(ptEyePairTopR.y - (eyePairHeight/3*2)));  
+           if (rightEyeRect.y > (leftEyeRect.y + leftEyeRect.height)) {
+              leftmost = getLeftmost ( ptEyePairTopL, ptLeftEyeTopL, new cv.Point(1000,1000));
+              rightmost = getRightmost (ptEyePairTopR,ptLeftEyeTopR, new cv.Point(0,0));
+              eyeRotation = 0;
+              glassesOffset = Math.round(leftEyeRect.width / 2);
             }
+            else if  (leftEyeRect.y > (rightEyeRect.y + rightEyeRect.height)) {
+              leftmost = getLeftmost ( ptEyePairTopL, new cv.Point(1000,1000), ptRightEyeTopL);
+              rightmost = getRightmost (ptEyePairTopR,new cv.Point(0,0),ptRightEyeTopR);
+              glassesOffset = Math.round(rEyeWidth / 2);
+              eyeRotation = 0; // going from a right eye to a left eye pair so on same x, 
+            }
+            else {
+              rightmost = getRightmost (ptEyePairTopR,ptLeftEyeTopR,ptRightEyeTopR);
+              leftmost =  getLeftmost ( ptEyePairTopL,  ptLeftEyeTopL, ptRightEyeTopL);
+              eyeRotation = calcTilt(calcAngle(rightmost, leftmost));
+              glassesOffset = Math.round(rightEyeRect.width / 2);
+            }
+            glassesWidth = (rightmost.x - leftmost.x);
+            glassesTopLx = Math.round(leftmost.x - glassesOffset);
+            glassesTopLy = Math.round(faceRect.y + leftmost.y - paddingGlassesT);
           }
-          // If eyes in sequence + overlapping + no eyePair
-          // Also no useful rotation information available
+          // If eyes in sequence + overlapping + no eyePair // Also no useful rotation information available
           else if (
-            (leftEyeRelativeToRight && eyesOverlap && !eyePair) ||
-            (!leftEyeRelativeToRight && !eyePair)
+            (leftEyeRelativeToRight && eyesOverlap && !eyePair) 
           ) {
-            console.log(
-              "1.3. (b) LE/RE ARE LE in sequence, BUT overlap AND no eye pair "
-            );
-            console.log(
-              "     (a) LE and RE not in correct relative position, no eye pair "
-            );
-            // If the left eye rect is too big, width of the glasses will be too big
-            // May not fit on the frame when the face is to the right (probably also left)
-
-            // Nose to the rescue to aid with width of glasses
-            // But it must be on the right side of the left eye
-            // Avoid negative evaluations for projected eye width
-
-            // if (nose) {
-            //   glassesWidth = glassesWForEyesUsingNose(
-            //   nose, ptNoseMiddle.x, ptLeftEyeTopR.x, ptRightEyeTopL.x)
-            //   console.log("  glasses Width based on nose", glassesWidth);
-
-            // }
-            // else if (mouthDetected) {
-            //   glassesWidth = glassesWForEyesUsingMouth(
-            //   mouthDetected, ptMouthTopMiddle.x, ptLeftEyeTopR.x, ptRightEyeTopL.x)
-            //   console.log("  glasses width based on mouth", glassesWidth);
-            // }
-            // // not good...
-            // else if (!nose && (lEyeWidth * 2 > faceWidth)) {
-            //   glassesWidth = Math.round(faceWidth *.6);
-            //   console.log("  glasses width based on face width", glassesWidth);
-            // }
-            // else //{ if (!nose && (lEyeWidth * 2 > faceWidth))
-            // {
-            //     glassesWidth = Math.round(lEyeWidth * 1.8);
-            //     console.log("  glasses Width based on left eye width", glassesWidth);
-            // }
-
-            glassesWidth = Math.round(faceWidth * 0.7);
-
+            console.log("1.3.1. LE/RE in sequence, BUT overlap AND no eye pair ");
+            glassesWidth = Math.round(faceWidth * 0.65);
             //if left eye in r eye work back from left eye
-            // This doesn't really work , the rectangles can be contained
-            // on either side...
+            // This doesn't really work , the rectangles can be contained on either side...
             if (nose) {
-              if (ptRightEyeTopR.x < ptLeftEyeTopR.x && (ptRightEyeTopL.x > ptLeftEyeTopL.x) &
-                  (ptNoseTopL.x < ptLeftEyeTopL.x)
-              ) {
-                // position from 'left' eye'
-                glassesTopLx = Math.round(ptLeftEyeTopR.x - glassesWidth);
-                console.log("     position from 'left' eye");
+              if (ptRightEyeTopL.x <= Math.min(ptRightEyeTopL.x, ptNoseTopL.x)) {
+                glassesTopLx = ptRightEyeTopL.x;
+                glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y - paddingGlassesT);
               }
-              //  else if (ptLeftEyeTopR.x > ptRightEyeTopR.x) { // position from 'left' eye'
-              //   glassesTopLx = Math.round(faceRect.x + ptLeftEyeTopR.x - glassesWidth);
-              // glassesTopLx = Math.round(faceRect.x + ptRightEyeTopL.x);
-              //   console.log("position from 'right ' eye");
-              //  }
-              // position fromright  eye
               else {
-                glassesTopLx = Math.round(ptRightEyeTopL.x);
+                glassesTopLx = Math.round(ptLeftEyeTopR.x - glassesWidth);
+                glassesTopLy = Math.round(faceRect.y + ptLeftEyeTopL.y - paddingGlassesT);
               }
-            } else glassesTopLx = Math.round(faceRect.x); // glassesTopLx = Math.round(faceRect.x + ptLeftEyeTopR.x - glassesWidth);
+            }
+            glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y - paddingGlassesT);
 
-            // position to nudge glasses to with uncertain width and position information
-            // nudge them so not placed outside the face rect
-            // let eTopLxNudged = Math.round(nudgeGlasses (faceRect.x, faceWidth, faceRect.x, glassesWidth));
-            // glassesTopLx = eTopLxNudged;
-            glassesTopLx = Math.round(faceWidth * 0.1);
-            glassesWidth = faceWidth * 0.7;
-            glassesTopLy = Math.round(ptLeftEyeTopL.y - (leftEyeRect.height*1.5));
-            //  if (nose && overlapVertically(ptNoseTopL, ptRightEyeTopL)|| mouthDetected
-            //     && overlapVertically(ptMouthTopL, ptRightEyeTopL))
-            //  {
-            //   glassesOffset = Math.round(lEyeWidth/2);
-            // Work back from end of left eye
-
-            // If right eye overlaps the nose or mouth it is unreliable
-            // if (nose  && overlapVertically(ptNoseTopL, ptRightEyeTopL)|| mouthDetected && overlapVertically(ptMouthTopL, ptRightEyeTopL))
-            // {
-            //   glassesOffset = Math.round(lEyeWidth/2);
-            //   // Work back from end of left eye
-            //   let glassesPositionR = leftEyeRect.x + lEyeWidth;
-            //   console.log("   Glasses right at", glassesPositionR);
-            //   console.log("   Glasses left  at", Math.round(glassesPositionR - glassesWidth));
-            //   glassesTopLx = Math.round(faceRect.x + glassesPositionR - glassesWidth);
-            //  // glassesTopLx = Math.round(faceRect.x + ptLeftEyeTopL.x);
-            //   //     glassesTopLx = Math.round(faceRect.x + ptLeftEyeTopL.x - glassesOffset);
-            //   glassesTopLx = Math.round(faceRect.x + ptLeftEyeTopL.x);
-            //   console.log("     glassesTopLx (faceRect.x + ptLeftEyeTopL.x)", glassesTopLx);}
-            // else {
-            //   glassesOffset = Math.round(rEyeWidth/2);
-            console.log(
-              "   glasses out of range?",
-              glassesTopLx + glassesWidth > frame.cols
-            );
-            console.log("   No reliable information for rotating");
-            //if (ptEyePairTopR.x > ptLeftEyeTopR.x && ptEyePairTopR.x > ptRightEyeTopR.x) {
-            // eyeRotation = calcTilt(calcAngle(eyePairEndMiddleR, lEyeMiddle));
           }
-        }
-        // *****************
-        // 2. EYE PAIR BUT EITHER NO RIGHT EYE OR LEFT EYE - unlikely scenario...
-        // ****************
-        else if (eyePair && nose && (!rightEye || !leftEye)) {
-          console.log("2. Eye pair only");
-          glassesWidth = eyePairWidth;
-          glassesOffset = Math.round(noseWidth / 2);
-          console.log("        glassesOffset", glassesOffset);
-          eyeRotation = calcTilt(calcAngle(eyePairRect.x, ptEyePairTopR));
-          // Correct one below, from top right to top left
-          // But no need to do the calculation in this case and can just set to 0
-          //eyeRotation = 0;
-          console.log("         Eye rotation", eyeRotation); // Expect to be 0 as all points in the eyePair rect
-          // could just set rotation to 0;
-          // Middle of glasses should be over middle of nose / middle of eyePair
-          glassesTopLx = eyePairRect.x - glassesOffset;
-          // Typically the eyePair rect is < half the height of the single corolloary
-          // glassesTopLy = Math.round(eyePairRect.y + paddingGlassesT + (eyePairHeight/3*1));
-          glassesTopLy = Math.round(eyePairRect.y + (eyePairRect.height));
+           // If eyes in sequence + overlapping + no eyePair // Also no useful rotation information available
+           else if ((!leftEyeRelativeToRight && !eyePair)) {
+           console.log("1.3.2. LE and RE not in correct relative position, no eye pair ");
+           glassesWidth = Math.round(faceWidth * 0.65);
+           if (nose) {
+              if (ptRightEyeTopL.x <= Math.min(ptRightEyeTopL.x, ptNoseTopL.x)) {
+                glassesTopLx = ptRightEyeTopL.x;
+                glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y - paddingGlassesT);
+              }
+              else {
+                glassesTopLx = Math.round(ptLeftEyeTopR.x - glassesWidth);
+                glassesTopLy = Math.round(faceRect.y + ptLeftEyeTopL.y - paddingGlassesT);
 
+              }
+            } 
+          }
+
+        }
+        else if (eyePair && (!rightEye || !leftEye)) {
+          console.log("2. Eye pair only && either only one of left eye/right eye or neither LE/RE");
+          ptEyePairTopL = new cv.Point(ptEyePairTopL.x, Math.round(ptEyePairTopL.y - (eyePairHeight/3*2)));   
+          ptEyePairTopR = new cv.Point(ptEyePairTopR.x, Math.round(ptEyePairTopR.y - (eyePairHeight/3*2)));  
+          if (leftEye) {
+            leftmost = getLeftmost ( ptEyePairTopL, ptLeftEyeTopL, new cv.Point(1000,1000));
+            rightmost = getRightmost (ptEyePairTopR,ptLeftEyeTopR, new cv.Point(0,0));
+            glassesWidth = (rightmost.x - leftmost.x);
+            glassesOffset = Math.round(lEyeWidth / 2);
+          }
+          if (rightEye) {
+            leftmost = getLeftmost ( ptEyePairTopL, new cv.Point(1000,1000), ptRightEyeTopL);
+            rightmost = getRightmost (ptEyePairTopR,new cv.Point(0,0),ptRightEyeTopR);
+            glassesOffset = Math.round(rEyeWidth / 2);
+            glassesWidth = (rightmost.x - leftmost.x);
+          }
+          else {
+           rightmost = ptEyePairTopR;
+           leftmost =  ptEyePairTopL;
+           eyeRotation = 0;
+           glassesWidth = eyePairWidth;
+           glassesOffset = Math.round(eyePairRect.width / 6);
+          }
+          glassesTopLx = Math.round(leftmost.x - glassesOffset);
+          glassesTopLy = Math.round(faceRect.y + leftmost.y - paddingGlassesT);
+         
+
+          // Middle of glasses should be over middle of nose / middle of eyePair
+          //glassesTopLx = eyePairRect.x - glassesOffset;
+          //   glassesTopLx = Math.round(ptEyePairTopL.x - glassesOffset);
+          //glassesTopLy = Math.round(eyePairRect.y + (eyePairRect.height));
+          //  glassesTopLy = Math.round(faceRect.y + ptEyePairTopL.y - paddingGlassesT);
         }
         // **************
-        // End 2. EYE PAIR specific segment
+        // End 2. EYE PAIR segment
         // *****************
 
         // *****************
@@ -800,61 +760,70 @@ module.exports = function (socket) {
         // ****************
         else if (leftEye && (!eyePair || !rightEye)) {
           // Nose not a good indicator  in this scenario as can be over to the side
-          console.log("3. Left eye only (cyan)");
-          // glassesWidth = Math.round(lEyeWidth * 2.5);
-          glassesOffset = Math.round(lEyeWidth / 2);
-          console.log("  No rotation");
-          // eyeRotation = calcTilt(calcAngle(eyePairEndMiddleR, lEyeMiddle));
-          // positioning cue from the nose
-          // if (nose) {
-          //   console.log("3. Using nose also as positioning cue");
-          //   console.log(glassesProportionateColumns/2);
-          //   glassesTopLx = Math.round(faceRect.x + ptNoseMiddle.x - (glassesProportionateColumns/2));
-          // }
-          // else {glassesTopLx = Math.round(faceRect.x + glassesOffset);}
-
-          // Nose to the rescue to aid with width of glasses
-          // Doesn't matter about any vertical overlap, at least for the x value ...
-          // But it must be on the right side of the left eye
-          // Avoid negative evaluations for projected eye width
-
-          // This turns out not to be very effective with variants
-          // if (nose) {
-          //   glassesWidth = glassesWForEyesUsingNoseLE(
-          //   nose, ptNoseMiddle.x, ptLeftEyeTopR.x, (ptNoseMiddle.x +1))
-          // }
-          // else if (mouthDetected) {
-          //   glassesWidth = glassesWForEyesUsingMouth(
-          //   mouthDetected, ptMouthTopMiddle.x, ptLeftEyeTopR.x,
-          //   (ptMouthMiddle.x +1)) // Don't have right eye so make it larger
-          //   console.log("  glasses width based on mouth", glassesWidth);
-          // }
-          // not good...
-          //else
-          // {
-          //     glassesWidth = Math.round(lEyeWidth * 1.8);
-          // }
-          glassesTopLy = Math.round(faceRect.y - leftEyeRect.height / 3); // + paddingGlassesT);
-        }
+          console.log("3. Left eye only (cyan) and either eye pair or right eye or left eye on own");
+          // Overwrite y value of eye pair to balance out its lower height 
+          if (eyePair) {
+            ptEyePairTopL = new cv.Point(ptEyePairTopL.x, Math.round(ptEyePairTopL.y - (eyePairHeight/3*2)));   
+            ptEyePairTopR = new cv.Point(ptEyePairTopR.x, Math.round(ptEyePairTopR.y - (eyePairHeight/3*2)));  
+            leftmost = getLeftmost ( ptEyePairTopL, ptLeftEyeTopL, new cv.Point(1000,1000));
+            rightmost = getRightmost (ptEyePairTopR,ptLeftEyeTopR, new cv.Point(0,0));
+            glassesOffset = Math.round(eyePairWidth);
+          }
+          if (rightEye) {
+            leftmost = getLeftmost ( new cv.Point(1000,1000), ptLeftEyeTopL,ptRightEyeTopL);
+            rightmost = getRightmost (new cv.Point(0,0),ptLeftEyeTopR, ptRightEyeTopR);
+            glassesOffset = Math.round(lEyeWidth / 2);
+          }
+          else {
+            leftmost = ptLeftEyeTopL;
+            glassesOffset = Math.round(lEyeWidth / 2);
+          }
+          eyeRotation = 0;
+          glassesTopLx = Math.round(leftmost.x - glassesOffset);
+          glassesTopLy = Math.round(faceRect.y + leftmost.y - paddingGlassesT);
+           }
 
         // *****************
         // 4. Right Eye - red - appears on left side
         // ****************
         else if (rightEye && (!eyePair || !leftEye)) {
-          //    else if (leftEye && nose && (!eyePair || !rightEye)) {
           // Nose not a good indicator  in this scenario as can be over to the side
-          // To do reuse other method
-          console.log("4. Right eye only (red)");
+          console.log("4. Right eye (red) and not either eye pair or left eye");
           glassesWidth = Math.round(rEyeWidth * 2.5);
           glassesOffset = Math.round(rEyeWidth / 2);
-          console.log("   No rotation");
+          if (eyePair) {
+            // Overwrite y value of eye pair to balance out lower height of eye pair 
+            ptEyePairTopL = new cv.Point(ptEyePairTopL.x, Math.round(ptEyePairTopL.y - (eyePairHeight/3*2)))   
+            ptEyePairTopR = new cv.Point(ptEyePairTopR.x, Math.round(ptEyePairTopR.y - (eyePairHeight/3*2)))   
+            leftmost = getLeftmost ( ptEyePairTopL, new cv.Point(1000,1000), ptRightEyeTopL);
+            rightmost = getRightmost (ptEyePairTopR,new cv.Point(0,0), ptRightEyeTopR);
+            glassesTopLy = Math.round(faceRect.y + leftmost.y - paddingGlassesT);
+          }
+          if (leftEye) {
+            leftmost = getLeftmost ( new cv.Point(1000,1000),ptLeftEyeTopL,ptRightEyeTopL);
+            rightmost = getRightmost (new cv.Point(0,0),ptLeftEyeTopR, ptRightEyeTopR);
+            glassesTopLy = Math.round(faceRect.y + leftmost.y - paddingGlassesT);
+          }
+          else if (rightEye) { 
+            if (nose && (Math.min(ptRightEyeTopL.x, ptNoseTopL.x) == ptRightEyeTopL.x)){
+              // right eye appears on the left of the nose as it should 
+              //leftmost = ptRightEyeTopL; 
+              glassesTopLx = ptRightEyeTopL.x  - glassesOffset; 
+              glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y - paddingGlassesT);  
+            }
+            else {
+              glassesTopLx = ptRightEyeTopL.x  - glassesWidth; 
+              glassesTopLy = Math.round(faceRect.y + ptRightEyeTopL.y - paddingGlassesT); 
+            }
+          }
+          eyeRotation = 0;
+          glassesOffset = Math.round(rEyeWidth / 2);
+          glassesTopLx = Math.round(glassesTopLy.x - glassesOffset);
           //  eyeRotation = calcTilt(calcAngle(eyePairEndMiddleR, lEyeMiddle));
-          glassesTopLx = Math.round(rightEyeRect.x - glassesOffset);
+          ///glassesTopLx = Math.round(rightEyeRect.x - glassesOffset);
           //let eTopLxNudged = Math.round(nudgeGlasses (rightEyeRect.x - glassesOffset, faceWidth, faceRect.x, glassesWidth));
-          //console.log("nudging"); 
           //glassesTopLx = eTopLxNudged;
-          glassesTopLy = Math.round(faceRect.y - rightEyeRect.height / 3); // + paddingGlassesT);
-        }
+         }
 
         // **************
         // END Joint logic for right eye only and left EYE only
@@ -868,20 +837,16 @@ module.exports = function (socket) {
         } else if (anyEye && glassesWidth == 0) {
           ("Error: glasses width cannot be 0");
         } else if (anyEye && glassesWidth && glassesWidth !== 0) {
-          resizedGlassesMask = glassesMask.resize(
-            Math.round(glassesWidth / glassesRatio),
+          resizedGlassesMask = glassesMask.resize(Math.round(glassesWidth / glassesRatio),
             Math.round(glassesWidth)
           );
           //@cv.imwrite("./C_resizedGlassesMask.jpg", resizedGlassesMask);
           glassesMask_inv = resizedGlassesMask.bitwiseNot();
           //@cv.imwrite("./D_GlassesMask_inv.jpg", glassesMask_inv);
-          resizedGlassesBGR = glassesBgr.resize(
-            glassesProportionateRows,
-            glassesProportionateColumns
-          );
+          resizedGlassesBGR = glassesBgr.resize(glassesProportionateRows,glassesProportionateColumns);
           //@cv.imwrite("./E_resizedGlassesBlueGreenRed.jpg", resizedGlassesBGR);
         }
-        // console.log("1.2..1 determine rotation and positions");
+        // console.log("1.2.1 determine rotation and positions");
         // Tilt is only useful if the right eye and left eye are in correct position relative to each other
 
         if (anyEye && glassesWidth > 0) {
@@ -894,6 +859,7 @@ module.exports = function (socket) {
             frame.cols,
             frame.rows
           );
+
           if (glassesTopLy > 0 && glassesTopLx > 0 && glassesWithinFrame) {
             // Create a padded image by adding a border to the resized glasses blue green red mat
             const paddedResizedGlassesBGRchannels = resizedGlassesBGR.copyMakeBorder(
@@ -916,9 +882,9 @@ module.exports = function (socket) {
                 paddedGlassesHeight
               )
             );
-            // More optimized ROI - the above ROI is a square. But we never need the full square space.
-            // We dont' have reliable rotation of more than +/-24 degrees.
-            // SO we only need enough space to handle rotations within that range.
+            // The above ROI is a square but don't need the full square space.
+            // We don't have face detection at more than +/-24 degrees so only need enough space to 
+            // handle rotations within that range.
             // the padding used to prevent 'cropping' of rotated mat
             const regionGlassesPaddedCropped = frame.getRegion(
               new cv.Rect(
@@ -958,10 +924,6 @@ module.exports = function (socket) {
               new cv.Point(Math.round(paddedGlassesHeight / 2),Math.round(paddedGlassesWidth / 2)),
               eyeRotation);
 
-            // Older items - will lead to cropping
-            // const rotMatGlasses = cv.getRotationMatrix2D(  new cv.Point(glassesProportionateColumns / 2, glassesProportionateRows / 2),eyeRotation);
-            // const rotatedGlasses = resizedGlassesBGR.warpAffine(rotMatGlasses);
-
             // const rotatedGlassesPaddedV2 = paddedResizedGlassesBGRchannels.warpAffine(rotMatGlassesPaddedTM,(new cv.Size(diagonalGlasses, diagonalGlasses)),cv.INTER_LANCZOS4, cv.BORDER_CONSTANT,transColor);
             // console.log("rotMatGlassesPaddedTM channels", rotMatGlassesPaddedTM.channels);
 
@@ -985,7 +947,7 @@ module.exports = function (socket) {
             // prevent rotated image being cropped
             const rectRegionGlassesPadded = new cv.Rect(Math.round(glassesTopLx),Math.round(glassesTopLy),paddedGlassesWidth,paddedGlassesHeight);
 
-            // Optimisation to trim the top and bottom of the area again
+            // Trim the top and bottom of the area again
             // We defined a trimFactor variable (e.g. .2)
             // Define the region to match the desired end result size
             // The glasses do not rotate beyond 24 degrees so do not need the full padding on the top and bottom
@@ -998,46 +960,41 @@ module.exports = function (socket) {
             if (eyeRotation == 0) {
               isTilted = false;
             } else isTilted = true;
-            // Larger area that corresponds to 360 degrees rotation 
+    
+            // Testing simple sequence to try to to get proper colours working 
+            // See line 391 ... 
+            //const glassesFrame = regionGlassesPaddedCropped.bitwiseAnd(regionGlassesPaddedCropped,glassesMaskInvert);
+            //Supposed to be Mat.bitwiseAnd(otherMat: cv.Mat): cv.Mat // won't work that way... 
+            //cv.imwrite("./z1_glassesFrame.jpg", glassesFrame);
+            //const eyes_and_glasses = glassesFrame.add(glassesFrame,glassesFace);
+            //cv.imwrite("./z1_eyes_and_glasses.jpg",eyes_and_glasses );
+            // Above doesn't work - glasses area just oversaturated and no glasses
+            
+            // Larger area that corresponds to full rotation 
             //eyes_and_glasses = regionGlassesBgPadded.add(rotatedGlassesPadded);
             // Trimmed area that allows for rotation of approx +-24 degrees. 
             // Face not detected at more than this. More efficient as not trying to copy an over-large image 
             eyes_and_glasses = regionGlassesBgPaddedCropped.add(rotatedGlassesPaddedCropped);
-            //@cv.imwrite("L_eyes_and_glasses.jpg", eyes_and_glasses);
+            cv.imwrite("L_eyes_and_glasses.jpg", eyes_and_glasses);
 
-            // // Experimenting to try to get alpha blending working
-            // Ref@ https://stackoverflow.com/questions/63432037/how-to-overlay-an-rgba-image-on-top-of-an-rgb-using-opencv
-            // const bg = regionGlassesBgPaddedCropped.convertTo(cv.CV_32FC3, 1.0 / 255);
-            // const fg = rotatedGlassesPaddedCropped.convertTo(cv.CV_32FC3, 1.0 / 255);
-            // const mask = resizedGlassesBGR.convertTo(cv.CV_32FC3, 1.0 / 255);
-            // const allOnes = new cv.Mat(glassesMask.rows, glassesMask.cols, cv.CV_32FC3, [1.0, 1.0, 1.0]);
-            // const invMask = allOnes.sub(glassesMask);
-            // // PROBLEM LINE //const invMask = allOnes.sub(mask);
-            // //invMask = allOnes.bitwiseNot();
-            // const output = mask.hMul(rotatedGlassesPaddedCropped).add(glassesMask_inv.hMul(regionGlassesBgPaddedCropped));
-            //  face_and_mustache = regionMustacheBgPaddedCropped.add(rotatedMustachePadded);
 
-            // useful ternary to select the method
-            // mRgba = img.channels === 1 ? img.cvtColor(cv.COLOR_GRAY2RGBA) : img.cvtColor(cv.COLOR_BGR2RGBA);
+          //  console.time("copyTo1");
+            eyes_and_glasses.copyTo(frame.getRegion(rectRegionGlassesPaddedCropped));
 
-            // Sequence with the uncropped padded area
-            // eyes_and_glasses.copyTo(frame.getRegion(rectRegionGlassesPadded));
-            // Cropped rotated area
-            
-            // Less performant 
-            //eyes_and_glasses.copyTo(frame.getRegion(rectRegionGlassesPaddedCropped));
-            frame = overlayOnto(
-              eyes_and_glasses,
-              frame,
-              rectRegionGlassesPaddedCropped.x,
-              rectRegionGlassesPaddedCropped.y
-            );
+            // frame = overlayOnto(
+            //   eyes_and_glasses,
+            //   frame,
+            //   rectRegionGlassesPaddedCropped.x,
+            //   rectRegionGlassesPaddedCropped.y
+            // );   
+
+         //   console.timeEnd("copyTo1");
 
           } else if (
             (glassesTopLy < 0 && glassesTopLx < 0) ||
             !glassesWithinFrame
           ) {
-            console.log("   Cannot position glasses outside of frame");
+          //  console.log("Cannot position glasses outside of frame");
           }
         } 
         // **************
@@ -1048,10 +1005,7 @@ module.exports = function (socket) {
       // ************ Moustache ************/
       // Moustache from mouth as nose is unreliable with head tilting .
       if (showMustache == true) {
-        if (!mouthDetected && !nose) {
-          ("Error: No mouth or nose to place moustache on/near");
-        }
-        //  if (mouthDetected) { ptMustacheTL = new cv.Point(ptMouthTopMiddle.x +mustacheCols/2, ptMouthTopMiddle.y);}
+        if (!mouthDetected && !nose) {("Error: No mouth or nose to place moustache on/near");}
         if (mouthDetected && !eyeOverlapsMouth) {
           ptMustacheTL = new cv.Point(
             Math.round(ptMouthTopMiddle.x - mustacheCols / 2),
@@ -1059,7 +1013,7 @@ module.exports = function (socket) {
           ); 
         }
         // Fallback use nose if mouth position not reliable or mouth not detected
-        else if (!mouthDetected && nose) {
+        else if (!mouthDetected && nose ) {
           ptMustacheTL = new cv.Point(
             ptNoseMiddle.x - mustacheCols / 2,
             noseRect.y - mustacheProportionateRows / 3
@@ -1067,14 +1021,13 @@ module.exports = function (socket) {
         }
         if (mouthDetected || nose) {
           const moustacheTopLx = faceRect.x + ptMustacheTL.x;
-          const moustacheTopLy = faceRect.y + ptMustacheTL.y;
+          //const moustacheTopLy = faceRect.y + ptMustacheTL.y;
+          const moustacheTopLy = faceRect.y + ptMustacheTL.y - (paddingMustacheT/3);
           const paddedResizedMustacheBGRchannels = resizedMustacheBGR.copyMakeBorder(
             paddingMustacheT,paddingMustacheB,paddingMustacheL,paddingMustacheR,cv.BORDER_CONSTANT,transColor);
           const paddedMustacheHeight = Math.round(paddedResizedMustacheBGRchannels.rows);
           const paddedMustacheWidth = paddedResizedMustacheBGRchannels.cols;
-
           const paddedMoustacheHeightTrimmed = Math.round(paddedMustacheHeight * (1 - trimFactor * 2) );
-
           const moustacheWithinFrame = withinFrame(
             moustacheTopLx,
             moustacheTopLy,
@@ -1190,28 +1143,27 @@ module.exports = function (socket) {
             } else isTilted = true;
             face_and_mustache = regionMustacheBgPaddedCropped.add(rotatedMustachePaddedCropped);
             //@cv.imwrite("L_face_and_mustache.jpg", face_and_mustache);
+          //    console.time("copyTo2");
+           face_and_mustache.copyTo(frame.getRegion(rectRegionMustachePaddedCropped));
 
-            //   face_and_mustache.copyTo(frame.getRegion(rectRegionMustachePaddedCropped));
-            frame = overlayOnto(
-              face_and_mustache,
-              frame,
-              rectRegionMustachePaddedCropped.x,
-              rectRegionMustachePaddedCropped.y
-            );
+          //  frame = overlayOnto(
+          //     face_and_mustache,
+          //     frame,
+          //     rectRegionMustachePaddedCropped.x,
+          //     rectRegionMustachePaddedCropped.y
+          //   );
+
+         //   console.timeEnd("copyTo2");
           } else if (
-            (moustacheTopLy < 0 && moustacheTopLx < 0) ||
-            !moustacheWithinFrame
+            (moustacheTopLy < 0 && moustacheTopLx < 0) || !moustacheWithinFrame
           ) {
-            console.log("   Cannot position moustache outside of frame");
+          //  console.log("Cannot position moustache outside of frame");
           }
         }
-
-        // **************
-        // END Moustache 
-        // **************
+        // **************// END Moustache // **************
 
       }
-      //@cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
+      cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
     }
 
     socket.emit("frame", {
