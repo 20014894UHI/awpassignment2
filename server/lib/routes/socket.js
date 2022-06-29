@@ -14,7 +14,7 @@ const trimFactor = 0.25; // Would need to make sure this is < 1
 // camera properties
 const camWidth = 640;
 const camHeight = 480;
-const camFps = 10; // To do -
+const camFps = 10; 
 const camInterval = 1000 / camFps;
 
 const transColor = new cv.Vec3(-255, 0, 0); //,255); // Tnansparent colour for padding etc.
@@ -874,14 +874,7 @@ module.exports = function (socket) {
 
             // ROI to correspond to rotated image
             // Original ROI - reflects the padding used to prevent 'cropping' of rotated mat
-            const regionGlassesPadded = frame.getRegion(
-              new cv.Rect(
-                Math.round(glassesTopLx),
-                Math.round(glassesTopLy),
-                paddedGlassesWidth,
-                paddedGlassesHeight
-              )
-            );
+            // const regionGlassesPadded = frame.getRegion(new cv.Rect(Math.round(glassesTopLx),Math.round(glassesTopLy),paddedGlassesWidth,paddedGlassesHeight));
             // The above ROI is a square but don't need the full square space.
             // We don't have face detection at more than +/-24 degrees so only need enough space to 
             // handle rotations within that range.
@@ -900,15 +893,12 @@ module.exports = function (socket) {
             //@cv.imwrite("./F_regionGlassesPaddedCropped.jpg",regionGlassesPaddedCropped);
 
             // Create background
-            const regionGlassesBgPadded = regionGlassesPadded.bitwiseAnd(
-              regionGlassesPadded,glassesMask_inv);
+            //const regionGlassesBgPadded = regionGlassesPadded.bitwiseAnd(regionGlassesPadded,glassesMask_inv);
             const regionGlassesBgPaddedCropped = regionGlassesPaddedCropped.bitwiseAnd(
               regionGlassesPaddedCropped,glassesMask_inv);
             // Create foreground
-            const regionGlassesBGR_FG = resizedGlassesBGR.bitwiseAnd(
-              resizedGlassesBGR,resizedGlassesMask);
-            const regionGlassesBGR_FGCropped = resizedGlassesBGR.bitwiseAnd(
-              resizedGlassesBGR,resizedGlassesMask);
+           // const regionGlassesBGR_FG = resizedGlassesBGR.bitwiseAnd(resizedGlassesBGR,resizedGlassesMask);
+           // const regionGlassesBGR_FGCropped = resizedGlassesBGR.bitwiseAnd(resizedGlassesBGR,resizedGlassesMask);
 
             // const regionGlassesBg = regionGlasses.bitwiseAnd(regionGlasses, glassesMask_inv);
             ////@cv.imwrite("./G_regionGlassesBg.jpg", regionGlassesBg);
@@ -945,7 +935,7 @@ module.exports = function (socket) {
 
             // This region allows for padding added by copyMakeBorder in order to
             // prevent rotated image being cropped
-            const rectRegionGlassesPadded = new cv.Rect(Math.round(glassesTopLx),Math.round(glassesTopLy),paddedGlassesWidth,paddedGlassesHeight);
+            //const rectRegionGlassesPadded = new cv.Rect(Math.round(glassesTopLx),Math.round(glassesTopLy),paddedGlassesWidth,paddedGlassesHeight);
 
             // Trim the top and bottom of the area again
             // We defined a trimFactor variable (e.g. .2)
@@ -975,8 +965,7 @@ module.exports = function (socket) {
             // Trimmed area that allows for rotation of approx +-24 degrees. 
             // Face not detected at more than this. More efficient as not trying to copy an over-large image 
             eyes_and_glasses = regionGlassesBgPaddedCropped.add(rotatedGlassesPaddedCropped);
-            cv.imwrite("L_eyes_and_glasses.jpg", eyes_and_glasses);
-
+            //@cv.imwrite("L_eyes_and_glasses.jpg", eyes_and_glasses);
 
           //  console.time("copyTo1");
             eyes_and_glasses.copyTo(frame.getRegion(rectRegionGlassesPaddedCropped));
@@ -1008,21 +997,23 @@ module.exports = function (socket) {
         if (!mouthDetected && !nose) {("Error: No mouth or nose to place moustache on/near");}
         if (mouthDetected && !eyeOverlapsMouth) {
           ptMustacheTL = new cv.Point(
-            Math.round(ptMouthTopMiddle.x - mustacheCols / 2),
-            Math.round(ptMouthTopL.y - mouthRect.height * 1.6)
+            Math.round(ptMouthTopMiddle.x - (mustacheCols / 2)+ eyeRotation),
+            Math.round(ptMouthTopL.y - (mouthRect.height * 1.7) - Math.abs(eyeRotation*1.5))
           ); 
         }
         // Fallback use nose if mouth position not reliable or mouth not detected
         else if (!mouthDetected && nose ) {
           ptMustacheTL = new cv.Point(
-            ptNoseMiddle.x - mustacheCols / 2,
-            noseRect.y - mustacheProportionateRows / 3
+            (ptNoseMiddle.x - (mustacheCols / 2) + (eyeRotation)),
+            noseRect.y - (mustacheProportionateRows /3*2) +  Math.abs(eyeRotation*1.5)
           );
         }
         if (mouthDetected || nose) {
-          const moustacheTopLx = faceRect.x + ptMustacheTL.x;
-          //const moustacheTopLy = faceRect.y + ptMustacheTL.y;
-          const moustacheTopLy = faceRect.y + ptMustacheTL.y - (paddingMustacheT/3);
+          const moustacheTopLx = Math.round(faceRect.x + ptMustacheTL.x);
+          const moustacheTopLy = Math.round(faceRect.y + ptMustacheTL.y);
+          // console.log("Adjusting moustache y by eyeRotation", eyeRotation);
+          // console.log("Adjusting moustache x by eyeRotation", eyeRotation);
+          //const moustacheTopLy = faceRect.y + ptMustacheTL.y - (paddingMustacheT/3);
           const paddedResizedMustacheBGRchannels = resizedMustacheBGR.copyMakeBorder(
             paddingMustacheT,paddingMustacheB,paddingMustacheL,paddingMustacheR,cv.BORDER_CONSTANT,transColor);
           const paddedMustacheHeight = Math.round(paddedResizedMustacheBGRchannels.rows);
@@ -1045,14 +1036,7 @@ module.exports = function (socket) {
             // ROIS
             // Old ROI; now not valid: const regionMustache = frame.getRegion(new cv.Rect(Math.round(moustacheTopLx), Math.round(moustacheTopLy), mustacheCols, mustacheProportionateRows));
             // 1. ROI For rotated image crop
-            const regionMustachePadded = frame.getRegion(
-              new cv.Rect(
-                Math.round(moustacheTopLx),
-                Math.round(moustacheTopLy),
-                paddedMustacheWidth,
-                paddedMustacheHeight
-              )
-            );
+            //const regionMustachePadded = frame.getRegion(new cv.Rect(Math.round(moustacheTopLx),Math.round(moustacheTopLy),paddedMustacheWidth,paddedMustacheHeight));
             const regionMustachePaddedCropped = frame.getRegion(
               new cv.Rect(
                 Math.round(moustacheTopLx),
@@ -1069,10 +1053,7 @@ module.exports = function (socket) {
             // Old One const regionMustacheBg = regionMustache.bitwiseAnd(regionMustache, mustacheMask_inv);
             ////@cv.imwrite("./G_regionMustacheBg.jpg", regionMustacheBg);
 
-            const regionMustacheBgPadded = regionMustachePadded.bitwiseAnd(
-              regionMustachePadded,
-              mustacheMask_inv
-            );
+            //const regionMustacheBgPadded = regionMustachePadded.bitwiseAnd(regionMustachePadded,mustacheMask_inv);
             //@cv.imwrite("./G_regionMustacheBgPadded.jpg",regionMustacheBgPadded);
 
             const regionMustacheBgPaddedCropped = regionMustachePaddedCropped.bitwiseAnd(
@@ -1081,16 +1062,10 @@ module.exports = function (socket) {
             );
             //@cv.imwrite("./G_regionMustacheBgPaddedCropped.jpg",regionMustacheBgPaddedCropped);
 
-            const regionMustacheBGR_FG = resizedMustacheBGR.bitwiseAnd(
-              resizedMustacheBGR,
-              resizedMustacheMask
-            );
+            //const regionMustacheBGR_FG = resizedMustacheBGR.bitwiseAnd(resizedMustacheBGR,resizedMustacheMask);
             //@cv.imwrite("./H_regionMustacheBgr_Fg.jpg", regionMustacheBGR_FG);
 
-            const regionMustacheBGR_FGCropped = resizedMustacheBGR.bitwiseAnd(
-              resizedMustacheBGR,
-              resizedMustacheMask
-            );
+            //const regionMustacheBGR_FGCropped = resizedMustacheBGR.bitwiseAnd(resizedMustacheBGR,resizedMustacheMask);
             //@cv.imwrite("./h_regionMustacheBgr_FgCropped.jpg",regionMustacheBGR_FGCropped);
 
             // ROTATE
@@ -1163,7 +1138,7 @@ module.exports = function (socket) {
         // **************// END Moustache // **************
 
       }
-      cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
+      //@cv.imwrite("./l_Frame_moust_glasses.jpg", frame);
     }
 
     socket.emit("frame", {
